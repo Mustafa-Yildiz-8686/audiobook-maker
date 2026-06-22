@@ -29,7 +29,7 @@ Convert any text file into a natural-sounding audiobook using Microsoft Edge's n
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/audiobook-maker.git
+git clone https://github.com/Mustafa-Yildiz-8686/audiobook-maker.git
 cd audiobook-maker
 
 python -m venv .venv
