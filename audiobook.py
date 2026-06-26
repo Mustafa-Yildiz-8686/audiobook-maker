@@ -38,17 +38,60 @@ RETRY_DELAY = 2  # seconds to wait between retries
 # ------------------------
 
 def split_text(text, max_chars):
-    paragraphs = text.split("\n\n")
+    import re
+    # Normalize line endings
+    text = text.replace("\r\n", "\n")
+    
+    # Detect paragraph separator dynamically
+    if "\n\n" in text:
+        paragraphs = text.split("\n\n")
+    else:
+        # Fall back to single newlines if double newlines are absent
+        paragraphs = [p for p in text.split("\n") if p.strip()]
+        
     chunks = []
     current_chunk = ""
+    
     for para in paragraphs:
-        if len(current_chunk) + len(para) + 2 <= max_chars:
-            current_chunk += para + "\n\n"
+        para = para.strip()
+        if not para:
+            continue
+            
+        # If a single paragraph is longer than max_chars, split it into sentences
+        if len(para) > max_chars:
+            sub_chunks = []
+            # Match sentence endings followed by space or end of string
+            raw_sentences = re.split(r"(?<=[.!?])\s+", para)
+            current_sub = ""
+            for sentence in raw_sentences:
+                if len(current_sub) + len(sentence) + 1 <= max_chars:
+                    current_sub = (current_sub + " " + sentence).strip()
+                else:
+                    if current_sub:
+                        sub_chunks.append(current_sub)
+                    current_sub = sentence
+            if current_sub:
+                sub_chunks.append(current_sub)
+                
+            # Process sub-chunks
+            for sub in sub_chunks:
+                if len(current_chunk) + len(sub) + 2 <= max_chars:
+                    current_chunk = (current_chunk + "\n\n" + sub).strip()
+                else:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                    current_chunk = sub
         else:
-            chunks.append(current_chunk.strip())
-            current_chunk = para + "\n\n"
-    if current_chunk:
+            if len(current_chunk) + len(para) + 2 <= max_chars:
+                current_chunk = (current_chunk + "\n\n" + para).strip()
+            else:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = para
+                
+    if current_chunk.strip():
         chunks.append(current_chunk.strip())
+        
     return chunks
 
 async def generate_chunk(text, index, total):
@@ -88,13 +131,13 @@ def merge_audio(file_list):
             "-i", f"anullsrc=r=24000:cl=mono",
             "-t", str(PAUSE_DURATION),
             pause_file
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
-    # write the concat list using basenames (files.txt is inside TEMP_DIR)
+    # write the concat list with absolute paths to avoid resolution issues
     with open(list_file, "w") as f:
         for file in file_list:
-            f.write(f"file '{os.path.basename(file)}'\n")
-            f.write(f"file 'pause.mp3'\n")
+            f.write(f"file '{os.path.abspath(file)}'\n")
+            f.write(f"file '{os.path.abspath(pause_file)}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
@@ -103,7 +146,7 @@ def merge_audio(file_list):
         "-i", list_file,
         "-c", "copy",
         OUTPUT_FILE
-    ])
+    ], stdin=subprocess.DEVNULL)
     print(f"Final audiobook saved as: {OUTPUT_FILE}")
 
 def cleanup_temp():
